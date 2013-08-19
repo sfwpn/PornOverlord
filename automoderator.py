@@ -4,7 +4,8 @@ from time import sleep, time
 
 import HTMLParser
 import praw
-import re2 as re
+# import re2 as re
+import re
 import yaml
 from requests.exceptions import HTTPError
 from sqlalchemy.sql import and_
@@ -330,7 +331,7 @@ class Condition(object):
 
         if self.comment:
             comment = self.build_message(self.comment, item, match,
-                                         disclaimer=True)
+                                         disclaimer=True, intro=True)
             if isinstance(item, praw.objects.Submission):
                 response = item.add_comment(comment)
             elif isinstance(item, praw.objects.Comment):
@@ -345,7 +346,7 @@ class Condition(object):
 
         if self.message and item.author:
             message = self.build_message(self.message, item, match,
-                                         disclaimer=True, permalink=True)
+                                         disclaimer=True, permalink=True, intro=True)
             subject = replace_placeholders(self.message_subject, item, match)
             r.send_message(item.author.name, subject, message)
 
@@ -367,9 +368,13 @@ class Condition(object):
                              datetime.utcnow() - item_time))
 
     def build_message(self, text, item, match,
-                      disclaimer=False, permalink=False):
+                      disclaimer=False, permalink=False, intro=False):
         """Builds a message/comment for the bot to post or send."""
-        message = text
+        if intro:
+            message = cfg_file.get('reddit', 'intro')
+            message = message + " " + text
+        else:
+            message = text
         if disclaimer:
             message = message+'\n\n'+cfg_file.get('reddit', 'disclaimer')
         if permalink and '{{permalink}}' not in message:
@@ -633,7 +638,7 @@ def process_messages():
 
                     # workaround for praw clearing mod sub list on accept
                     mod_subs = r.user._mod_subs
-                    r.accept_moderator_invite(subreddit)
+                    # r.accept_moderator_invite(subreddit)
                     r.user._mod_subs = mod_subs
                     r.user._mod_subs[subreddit.display_name.lower()] = subreddit
                     logging.info('Accepted mod invite in /r/{0}'
@@ -679,8 +684,10 @@ def replace_placeholders(string, item, match):
     """Replaces placeholders in the string."""
     if isinstance(item, praw.objects.Comment):
         string = string.replace('{{body}}', item.body)
+        string = string.replace('{{kind}}', 'comment')
     else:
         string = string.replace('{{body}}', item.selftext)
+        string = string.replace('{{kind}}', 'submission')
     string = string.replace('{{domain}}', getattr(item, 'domain', ''))
     string = string.replace('{{permalink}}', get_permalink(item))
     string = string.replace('{{subreddit}}', item.subreddit.display_name)
@@ -987,7 +994,7 @@ def build_multireddit_groups(subreddits):
 def check_queues(queue_funcs, sr_dict, cond_dict):
     """Checks all the queues for new items to process."""
     global r
-
+    
     for queue in queue_funcs:
         subreddits = [s for s in sr_dict if len(cond_dict[s][queue]) > 0]
         if len(subreddits) == 0:
@@ -1049,7 +1056,8 @@ def initialize(queues, reload_mod_subs=True):
 def main():
     global r
     logging.config.fileConfig(path_to_cfg)
-    re.set_fallback_notification(re.FALLBACK_EXCEPTION)
+    # the below only works with re2
+    # re.set_fallback_notification(re.FALLBACK_EXCEPTION)
 
     # which queues to check and the function to call
     queue_funcs = {'report': 'get_reports',
@@ -1068,7 +1076,7 @@ def main():
             break
         except Exception as e:
             logging.error('ERROR: {0}'.format(e))
-
+    
     run_counter = 0
     while True:
         run_counter += 1
